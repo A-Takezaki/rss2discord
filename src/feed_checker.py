@@ -59,7 +59,7 @@ def check_feed_and_post_entries():
 
     # 取得したエントリごとに処理
     for entry in feed.entries:
-        entry_id = entry.get('id', entry.link)  # idがなければlinkをidとして使用
+        entry_id = entry.link # linkをidとして使用
         # 未投稿のエントリのみを処理
         if not entry_already_posted(entry_id):
             # Discordへの投稿を試みる
