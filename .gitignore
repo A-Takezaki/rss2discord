@@ -1,0 +1,8 @@
+# .gitignore
+# Ignore the configuration file if it's in the root of the project
+# Or adjust the path if it's located elsewhere
+config.ini
+
+# Ignore logs
+/logs/*
+!logs/.gitkeep
