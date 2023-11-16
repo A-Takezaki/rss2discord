@@ -3,74 +3,89 @@ import feedparser
 import requests
 import sqlite3
 import os
+import logging
+import configparser
 
+# スクリプトのディレクトリとデータベースのパスを取得
+script_dir = os.path.dirname(os.path.realpath(__file__))
+DATABASE_PATH = os.path.join(script_dir, '../db/posted_entries.db')
 # CONFIGファイルのパスを環境変数から取得、なければデフォルトのパスを使用
 CONFIG_PATH = os.getenv('CONFIG_PATH', '../config.ini')
+# CONFIGファイルから設定を読み込む
+# WEBHOOK_URL, RSS_FEED_URL = load_config(CONFIG_PATH)
+
+# ロガーの設定
+logging.basicConfig(level=logging.INFO, filename=os.path.join(script_dir, '../logs/rss2discord.log'), filemode='a',
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 def load_config(path):
-    # RawConfigParserを使用してCONFIGファイルを読み込み、設定値を取得
-    import configparser
     config = configparser.RawConfigParser()
     config.read(path)
-    return config['DEFAULT']['DiscordWebhookUrl'], config['DEFAULT']['RssFeedUrl']
+    users_config = {}  # ユーザー設定を格納する辞書を初期化
 
-# CONFIGファイルからDiscordのWebhook URLとRSSフィードURLを読み込む
-WEBHOOK_URL, RSS_FEED_URL = load_config(CONFIG_PATH)
+    for section in config.sections():
+        # ここで各セクションのWebhook URLを取得します。
+        webhook_url = config.get(section, 'DiscordWebhookUrl', fallback=None)
+        # セクション内のすべてのRssFeedUrlsエントリを取得します。
+        feed_urls = [feed.strip() for feed in config.get(section, 'RssFeedUrls').split(',') if feed.strip()]
 
-# スクリプトが存在するディレクトリの絶対パスを取得
-script_dir = os.path.dirname(os.path.realpath(__file__))
-# データベースファイルへの絶対パスを構築
-DATABASE_PATH = os.path.join(script_dir, '../db/posted_entries.db')
+        if webhook_url and feed_urls:  # webhook_urlとfeed_urlsが両方とも存在する場合のみ
+            users_config[section] = {'webhook_url': webhook_url, 'feed_urls': feed_urls}
 
-def post_to_discord(entry):
-    # Discordへの投稿内容を準備
-    data = {
-        "content": f"{entry.title}\n{entry.link}"
-    }
-    # DiscordのWebhook URLへ投稿
-    response = requests.post(WEBHOOK_URL, json=data)
-    # ステータスコード204が返れば成功
+    return users_config
+
+
+def post_to_discord(entry, webhook_url):  # webhook_urlを引数として追加
+    data = {"content": f"{entry.title}\n{entry.link}"}
+    response = requests.post(webhook_url, json=data)  # webhook_urlを使用してPOSTリクエストを送信
     return response.status_code == 204
 
+
 def entry_already_posted(entry_id):
-    # 指定されたIDのエントリがデータベースに存在するか確認
-    conn = sqlite3.connect(DATABASE_PATH)
-    c = conn.cursor()
-    c.execute("SELECT id FROM posted_entries WHERE id = ?", (entry_id,))
-    exists = c.fetchone() is not None
-    conn.close()
-    return exists
+    # データベースでエントリが既に投稿されたか確認
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        c = conn.cursor()
+        c.execute("SELECT id FROM posted_entries WHERE id = ?", (entry_id,))
+        exists = c.fetchone() is not None
+        return exists
+    except sqlite3.Error as e:
+        logging.error(f"Database error: {e}")
+        return False
+    finally:
+        conn.close()
 
 def mark_entry_as_posted(entry_id, entry):
-    # エントリをデータベースに記録（summaryは現在使用しないためNoneを挿入）
-    conn = sqlite3.connect(DATABASE_PATH)
-    c = conn.cursor()
-    c.execute("INSERT INTO posted_entries (id, title, url) VALUES (?, ?, ?)",
-              (entry_id, entry.title, entry.link))
-    conn.commit()
-    conn.close()
+    # データベースにエントリを記録
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        c = conn.cursor()
+        c.execute("INSERT INTO posted_entries (id, title, url) VALUES (?, ?, ?)",
+                  (entry_id, entry.title, entry.link))
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.error(f"Error inserting into the database: {e}")
+    finally:
+        conn.close()
 
-def check_feed_and_post_entries():
-    # RSSフィードを解析してエントリを処理
-    feed = feedparser.parse(RSS_FEED_URL)
-    # フィードのタイトルとエントリ数を出力
-    print(f"Feed Title: {feed.feed.get('title', 'No feed title')}")
-    print(f"Feed Entries: {len(feed.entries)}")
+def check_feed_and_post_entries(users_config):
+    for user, config in users_config.items():
+        webhook_url = config['webhook_url']
+        for feed_url in config['feed_urls']:
+            feed = feedparser.parse(feed_url)
+            logging.info(f"{user} - Feed Title: {feed.feed.get('title', 'No feed title')}")
+            logging.info(f"{user} - Feed Entries: {len(feed.entries)}")
+            
+            for entry in feed.entries:
+                entry_id = entry.link # linkをidとして使用
+                if not entry_already_posted(entry_id):
+                    if post_to_discord(entry, webhook_url):  # webhook_urlを引数として渡します
+                        mark_entry_as_posted(entry_id, entry)
+                        logging.info(f"Posted to Discord: {entry.title}")
+                    else:
+                        logging.warning(f"Failed to post to Discord: {entry.title}")
 
-    # 取得したエントリごとに処理
-    for entry in feed.entries:
-        entry_id = entry.link # linkをidとして使用
-        # 未投稿のエントリのみを処理
-        if not entry_already_posted(entry_id):
-            # Discordへの投稿を試みる
-            if post_to_discord(entry):
-                # 投稿成功したらデータベースに記録
-                mark_entry_as_posted(entry_id, entry)
-                print(f"Posted to Discord: {entry.title}")
-            else:
-                # 投稿失敗を出力
-                print(f"Failed to post to Discord: {entry.title}")
 
-# スクリプトのメイン処理を実行
 if __name__ == '__main__':
-    check_feed_and_post_entries()
+    users_config = load_config(CONFIG_PATH)
+    check_feed_and_post_entries(users_config)
