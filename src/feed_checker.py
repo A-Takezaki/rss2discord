@@ -6,6 +6,8 @@ import logging
 import configparser
 from bs4 import BeautifulSoup
 import openai
+from newspaper import Article
+import datetime
 
 # スクリプトのディレクトリとデータベースのパスを取得
 script_dir = os.path.dirname(os.path.realpath(__file__))
@@ -67,7 +69,6 @@ def fetch_article_content(url):
         return ""
 
 def extract_content(entry):
-    from newspaper import Article
     content = "No Content"
     article = Article(entry.link)
     article.download()
@@ -98,8 +99,7 @@ def post_to_discord(entry, summry, webhook_url):
         logging.error(f"Error posting to Discord: {e}")
         return False
 
-
-def post_to_notion(database_id, token, title, content,summury, article_url, user_name):
+def post_to_notion(database_id, token, title, content,summury, article_url, user_name,posted_date):
     try:
         notion_api_url = "https://api.notion.com/v1/pages"
         headers = {
@@ -107,14 +107,16 @@ def post_to_notion(database_id, token, title, content,summury, article_url, user
             "Content-Type": "application/json",
             "Notion-Version": "2021-05-13"
         }
+    
         data = {
             "parent": {"database_id": database_id},
             "properties": {
-                "Name": {"title": [{"text": {"content": title}}]},
-                "Content": {"rich_text": [{"text": {"content": content}}]},
-                "Summry": {"rich_text": [{"text": {"content": summury}}]},
-                "URL": {"url": article_url},
-                "Category": {"select": {"name": user_name}}
+            "Name": {"title": [{"text": {"content": title}}]},
+            "Content": {"rich_text": [{"text": {"content": content}}]},
+            "Summry": {"rich_text": [{"text": {"content": summury}}]},
+            "URL": {"url": article_url},
+            "Category": {"select": {"name": user_name}},
+            "PostedDate": {"date": {"start": posted_date}}
             }
         }
         response = requests.post(notion_api_url, headers=headers, json=data)
@@ -182,6 +184,20 @@ def summarize_with_openai_api(text, api_key):
         logging.error(f"An unexpected error occurred: {e}")
     return None
 
+def get_entry_date(entry):
+    if hasattr(entry, 'published'):
+        return entry.published
+    elif hasattr(entry, 'updated'):
+        return entry.updated
+    elif 'dc:date' in entry:
+        return entry['dc:date']
+    elif hasattr(entry, 'pubDate'):
+        return entry.pubDate
+    else:
+        return datetime.datetime.now().isoformat()
+
+    
+    
 def check_feed_and_post_entries(openai_config, notion_config, users_config):
     for user, config in users_config.items():
         webhook_url = config['webhook_url']
@@ -198,7 +214,9 @@ def check_feed_and_post_entries(openai_config, notion_config, users_config):
                     if post_to_discord(entry,summury, webhook_url):
                         mark_entry_as_posted(entry_id, entry)
                         logging.info(f"Posted to Discord: {entry.title}")
-                        post_to_notion(notion_config['database_id'], notion_config['token'], entry.title, extract_content(entry),summury, entry.link, user)
+                        published = get_entry_date(entry)
+                        post_to_notion(notion_config['database_id'], notion_config['token'], entry.title, extract_content(entry), summury, entry.link, user, published)
+                        # post_to_notion(notion_config['database_id'], notion_config['token'], entry.title, extract_content(entry),summury, entry.link, user)
 
 
 if __name__ == '__main__':
