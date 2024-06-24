@@ -119,6 +119,7 @@ def post_to_notion(database_id, token, title, content,summury, article_url, user
             "PostedDate": {"date": {"start": posted_date}}
             }
         }
+        response = requests.post(notion_api_url, headers=headers, json=data)
         if response.status_code == 200:
             logging.info(f"Successfully posted to Notion: {title}")
         else:
