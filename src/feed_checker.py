@@ -92,7 +92,11 @@ def post_to_discord(entry, summry, webhook_url):
         if response.status_code == 204:
             logging.info(f"Successfully posted to Discord: {entry.title}")
         else:
-
+            logging.warning(f"Failed to post to Discord: {entry.title} - Status Code: {response.status_code}, Response: {response.text}")
+        return response.status_code == 204
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error posting to Discord: {e}")
+        return False
 
 def post_to_notion(database_id, token, title, content,summury, article_url, user_name,posted_date):
     try:
