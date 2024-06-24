@@ -5,4 +5,5 @@ config.ini
 
 # Ignore logs
 /logs/*
+/db/posted_entries.db
 !logs/.gitkeep
