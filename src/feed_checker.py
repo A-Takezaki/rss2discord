@@ -92,14 +92,9 @@ def post_to_discord(entry, summry, webhook_url):
         if response.status_code == 204:
             logging.info(f"Successfully posted to Discord: {entry.title}")
         else:
-            logging.warning(f"Failed to post to Discord: {entry.title} - Status Code: {response.status_code}, Response: {response.text}")
-        return response.status_code == 204
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error posting to Discord: {e}")
-        return False
 
 
-def post_to_notion(database_id, token, title, content,summury, article_url, user_name):
+def post_to_notion(database_id, token, title, content,summury, article_url, user_name,posted_date):
     try:
         notion_api_url = "https://api.notion.com/v1/pages"
         headers = {
@@ -107,17 +102,18 @@ def post_to_notion(database_id, token, title, content,summury, article_url, user
             "Content-Type": "application/json",
             "Notion-Version": "2021-05-13"
         }
+    
         data = {
             "parent": {"database_id": database_id},
             "properties": {
-                "Name": {"title": [{"text": {"content": title}}]},
-                "Content": {"rich_text": [{"text": {"content": content}}]},
-                "Summry": {"rich_text": [{"text": {"content": summury}}]},
-                "URL": {"url": article_url},
-                "Category": {"select": {"name": user_name}}
+            "Name": {"title": [{"text": {"content": title}}]},
+            "Content": {"rich_text": [{"text": {"content": content}}]},
+            "Summry": {"rich_text": [{"text": {"content": summury}}]},
+            "URL": {"url": article_url},
+            "Category": {"select": {"name": user_name}},
+            "PostedDate": {"date": {"start": posted_date}}
             }
         }
-        response = requests.post(notion_api_url, headers=headers, json=data)
         if response.status_code == 200:
             logging.info(f"Successfully posted to Notion: {title}")
         else:
@@ -198,7 +194,8 @@ def check_feed_and_post_entries(openai_config, notion_config, users_config):
                     if post_to_discord(entry,summury, webhook_url):
                         mark_entry_as_posted(entry_id, entry)
                         logging.info(f"Posted to Discord: {entry.title}")
-                        post_to_notion(notion_config['database_id'], notion_config['token'], entry.title, extract_content(entry),summury, entry.link, user)
+                        post_to_notion(notion_config['database_id'], notion_config['token'], entry.title, extract_content(entry), summury, entry.link, user, entry.published)
+                        # post_to_notion(notion_config['database_id'], notion_config['token'], entry.title, extract_content(entry),summury, entry.link, user)
 
 
 if __name__ == '__main__':
