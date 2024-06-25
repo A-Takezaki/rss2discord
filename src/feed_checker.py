@@ -17,7 +17,12 @@ DATABASE_PATH = os.path.join(script_dir, '../db/posted_entries.db')
 logging.basicConfig(level=logging.INFO, filename=os.path.join(script_dir, '../logs/rss2discord.log'), filemode='a',
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-def load_config(path):
+def load_config(config_path, credential_path):
+    openai_config, notion_config = load_credentials(credential_path)
+    users_config = load_rssconfig(config_path)
+    return openai_config, notion_config, users_config
+
+def load_credentials(path):
     config = configparser.RawConfigParser()
     try:
         config.read(path)
@@ -31,7 +36,17 @@ def load_config(path):
             'token': config['Notion']['Token'],
             'database_id': config['Notion']['DatabaseId']
         }
+        return openai_config, notion_config
+    except KeyError as e:
+        logging.error(f"Missing key in config file: {e}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while reading config: {e}")
+    return None, None  # エラーが発生した場合
 
+def load_rssconfig(path):
+    config = configparser.RawConfigParser()
+    try:
+        config.read(path)
         # 各ユーザーの設定を読み込む
         users_config = {}
         for section in config.sections():
@@ -43,15 +58,14 @@ def load_config(path):
                         'webhook_url': webhook_url,
                         'feed_urls': [url.strip() for url in feed_urls.split(',')]
                     }
-        return openai_config, notion_config, users_config
+        return users_config
     except KeyError as e:
         logging.error(f"Missing key in config file: {e}")
     except Exception as e:
         logging.error(f"An unexpected error occurred while reading config: {e}")
-    return None, None, None  # エラーが発生した場合
-
-
-
+    return None
+    
+    
 def fetch_article_content(url):
     """
     与えられたURLからウェブページの内容を取得し、HTMLタグを除去して本文を返す
@@ -221,7 +235,10 @@ def check_feed_and_post_entries(openai_config, notion_config, users_config):
 
 if __name__ == '__main__':
     CONFIG_PATH = os.getenv('CONFIG_PATH', '../config.ini')
-    openai_config, notion_config, users_config = load_config(CONFIG_PATH)
+    CREDENTIAL_PATH = os.getenv('CREDENTIAL_PATH', '../credential.ini')
+    print("CONFIG_PATH:", CONFIG_PATH)
+    print("CREDENTIAL_PATH:", CREDENTIAL_PATH)
+    openai_config, notion_config, users_config = load_config(CONFIG_PATH, CREDENTIAL_PATH)
     check_feed_and_post_entries(openai_config, notion_config, users_config)
     
     
