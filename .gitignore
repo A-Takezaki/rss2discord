@@ -7,5 +7,5 @@ credential.ini
 
 # Ignore logs
 /logs/*
-/db/posted_entries.db
+# /db/posted_entries.db
 !logs/.gitkeep
