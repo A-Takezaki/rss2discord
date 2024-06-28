@@ -100,6 +100,8 @@ def post_to_discord(entry, summry, webhook_url):
         return False
 
 def post_to_notion(database_id, token, title, content,summury, article_url, user_name,posted_date):
+    # contentの文字列長を2000文字以下に制限
+    content = content[:2000]
     try:
         notion_api_url = "https://api.notion.com/v1/pages"
         headers = {
@@ -260,7 +262,8 @@ def check_feed_and_post_entries(openai_config, notion_config, users_config):
 if __name__ == '__main__':
     # 相対パス設定が失敗するようになったので、開発端末用絶対パスで指定
     # 実環境では環境変数で指定する
-    CONFIG_PATH = os.getenv('CONFIG_PATH', '/root/work/rss2discord/config.ini')
+    # CONFIG_PATH = os.getenv('CONFIG_PATH', '/root/work/rss2discord/config.ini') 
+    CONFIG_PATH = os.getenv('CONFIG_PATH', '/home/zaki/work/rss2discord/config.ini')
     openai_config, notion_config, users_config = load_config(CONFIG_PATH)
 
     check_feed_and_post_entries(openai_config, notion_config, users_config)
