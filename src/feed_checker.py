@@ -129,7 +129,7 @@ def post_to_notion(database_id, token, title, content,summury, article_url, user
         logging.error(f"Error posting to Notion: {e}")
         return False
     
-
+# splite3を使ってデータベースに登録済みのエントリかどうかを確認する
 def entry_already_posted(entry_id):
     try:
         conn = sqlite3.connect(DATABASE_PATH)
@@ -142,7 +142,7 @@ def entry_already_posted(entry_id):
         return False
     finally:
         conn.close()
-
+# splite3を使ってデータベースにエントリを登録する
 def mark_entry_as_posted(entry_id, entry):
     try:
         conn = sqlite3.connect(DATABASE_PATH)
@@ -154,6 +154,36 @@ def mark_entry_as_posted(entry_id, entry):
         logging.error(f"Error inserting into the database: {e}")
     finally:
         conn.close()
+        
+# notionのDBに登録済のエントリかどうかを確認する
+def entry_already_posted_from_notion(notion_config,entry_id):
+    try:
+        notion_api_url = "https://api.notion.com/v1/databases/{database_id}/query".format(database_id=notion_config['database_id'])
+        headers = {
+            "Authorization": "Bearer {token}".format(token=notion_config['token']),
+            "Content-Type": "application/json",
+            "Notion-Version": "2021-05-13"
+        }
+        data = {
+            "filter": {
+                "property": "URL",
+                "url": {
+                    "equals": entry_id
+                }
+            }
+        }
+        response = requests.post(notion_api_url, headers=headers, json=data)
+        if response.status_code == 200:
+            result = response.json()
+            # レスポンスにエントリが含まれているかどうかを確認(true/false)
+            return len(result.get('results', [])) > 0
+        else:
+            logging.warning("Failed to query Notion database: {status_code} - {response_text}".format(
+                status_code=response.status_code, response_text=response.text
+            ))
+    except requests.exceptions.RequestException as e:
+        logging.error("Error querying Notion database: {error}".format(error=e))
+    return False
 
 def summarize_with_openai_api(text, api_key):
     openai.api_key = api_key
@@ -206,6 +236,17 @@ def check_feed_and_post_entries(openai_config, notion_config, users_config):
             logging.info(f"{user} - Feed Title: {feed.feed.get('title', 'No feed title')}")
             logging.info(f"{user} - Feed Entries: {len(feed.entries)}")
 
+            # for entry in feed.entries:
+            #     entry_id = entry.link
+            #     if not entry_already_posted(entry_id):
+            #         content = extract_content(entry)
+            #         summury = summarize_with_openai_api(content,openai_config['api_key'])
+            #         if post_to_discord(entry,summury, webhook_url):
+            #             mark_entry_as_posted(entry_id, entry)
+            #             logging.info(f"Posted to Discord: {entry.title}")
+            #             published = get_entry_date(entry)
+            #             post_to_notion(notion_config['database_id'], notion_config['token'], entry.title, extract_content(entry), summury, entry.link, user, published)
+
             for entry in feed.entries:
                 entry_id = entry.link
                 if not entry_already_posted(entry_id):
@@ -216,13 +257,9 @@ def check_feed_and_post_entries(openai_config, notion_config, users_config):
                         logging.info(f"Posted to Discord: {entry.title}")
                         published = get_entry_date(entry)
                         post_to_notion(notion_config['database_id'], notion_config['token'], entry.title, extract_content(entry), summury, entry.link, user, published)
-                        # post_to_notion(notion_config['database_id'], notion_config['token'], entry.title, extract_content(entry),summury, entry.link, user)
 
 
 if __name__ == '__main__':
     CONFIG_PATH = os.getenv('CONFIG_PATH', '../config.ini')
     openai_config, notion_config, users_config = load_config(CONFIG_PATH)
     check_feed_and_post_entries(openai_config, notion_config, users_config)
-    
-    
-    
