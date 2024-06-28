@@ -129,7 +129,7 @@ def post_to_notion(database_id, token, title, content,summury, article_url, user
         logging.error(f"Error posting to Notion: {e}")
         return False
     
-# splite3を使ってデータベースに登録済みのエントリかどうかを確認する
+# splite3を使ってデータベースに登録済みのエントリかどうかを確認する(notion連携が完全になったら消す)
 def entry_already_posted(entry_id):
     try:
         conn = sqlite3.connect(DATABASE_PATH)
@@ -142,7 +142,7 @@ def entry_already_posted(entry_id):
         return False
     finally:
         conn.close()
-# splite3を使ってデータベースにエントリを登録する
+# splite3を使ってデータベースにエントリを登録する(notion連携が完全になったら消す)
 def mark_entry_as_posted(entry_id, entry):
     try:
         conn = sqlite3.connect(DATABASE_PATH)
@@ -208,8 +208,6 @@ def summarize_with_openai_api(text, api_key):
         else:
             logging.error("OpenAI API response is empty.")
             return None
-    # except openai.error.OpenAIError as e:
-    #     logging.error(f"OpenAI API error: {e} - Response: {getattr(e, 'response', 'No response')}")
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
     return None
@@ -249,17 +247,20 @@ def check_feed_and_post_entries(openai_config, notion_config, users_config):
 
             for entry in feed.entries:
                 entry_id = entry.link
-                if not entry_already_posted(entry_id):
+                if not entry_already_posted_from_notion(notion_config,entry_id):
                     content = extract_content(entry)
                     summury = summarize_with_openai_api(content,openai_config['api_key'])
                     if post_to_discord(entry,summury, webhook_url):
-                        mark_entry_as_posted(entry_id, entry)
+                        # mark_entry_as_posted(entry_id, entry)
                         logging.info(f"Posted to Discord: {entry.title}")
                         published = get_entry_date(entry)
                         post_to_notion(notion_config['database_id'], notion_config['token'], entry.title, extract_content(entry), summury, entry.link, user, published)
 
 
 if __name__ == '__main__':
-    CONFIG_PATH = os.getenv('CONFIG_PATH', '../config.ini')
+    # 相対パス設定が失敗するようになったので、開発端末用絶対パスで指定
+    # 実環境では環境変数で指定する
+    CONFIG_PATH = os.getenv('CONFIG_PATH', '/root/work/rss2discord/config.ini')
     openai_config, notion_config, users_config = load_config(CONFIG_PATH)
+
     check_feed_and_post_entries(openai_config, notion_config, users_config)
